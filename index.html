@@ -248,7 +248,34 @@
     display: none; cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,.35);
   }
   .testflag.on{ display: block; }
-  .dlg .close{ width: 100%; margin-top: 14px; padding: 11px; background: var(--accent); color: #08243b; border-color: var(--accent); }
+  .dlg{ padding-bottom: 0; }
+  .dlg .dlgfoot{
+    position: sticky; bottom: 0; z-index: 2; background: var(--panel);
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+    margin: 12px -22px 0; padding: 12px 22px 16px; border-top: 1px solid rgba(127,127,127,.25);
+  }
+  .dlg .dlgfoot .dirty{ margin-right: auto; font-size: 12px; color: #fbbf24; font-weight: 600; }
+  .dlg .dlgfoot button{ padding: 10px 18px; font-weight: 700; }
+  .dlg .dlgfoot .save{ background: var(--accent); color: #08243b; border-color: var(--accent); }
+  .dlg .dlgfoot button:disabled{ opacity: .45; cursor: default; }
+  .dlg .phbox{ margin: 12px 0; padding: 12px; border-radius: 10px; border: 1px dashed #a78bfa; }
+  .dlg .phday{ font-size: 13px; font-weight: 700; color: var(--ink-dim); margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .05em; }
+  .dlg .phrow{ padding: 8px 0; border-top: 1px solid rgba(127,127,127,.15); }
+  .dlg .phrow .ph-h{ display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; }
+  .dlg .phrow .ph-h span{ color: var(--ink-dim); font-weight: 600; font-size: 12px; }
+  .dlg .phrow .ph-c{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+  .dlg .phrow .ph-cell{ border-radius: 8px; padding: 6px; background: rgba(127,127,127,.08); text-align: center; }
+  .dlg .phrow .ph-cell b{ display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .dlg .phrow .ph-cell.silent b{ color: #a78bfa; } .dlg .phrow .ph-cell.brk b{ color: #60a5fa; } .dlg .phrow .ph-cell.low b{ color: #fbbf24; }
+  .dlg .stepper{ display: inline-flex; align-items: center; gap: 4px; }
+  .dlg .stepper button{ width: 30px; height: 30px; padding: 0; font-size: 17px; font-weight: 800; line-height: 1; border-radius: 8px; touch-action: manipulation; user-select: none; }
+  .dlg .stepper input{ width: 48px; padding: 5px 2px; }
+  .dlg .ph-low{ font-size: 20px; font-weight: 800; line-height: 30px; }
+  .dlg .ph-low.warn{ color: #fbbf24; } .dlg .ph-low.bad{ color: var(--red); }
+  .dlg .ph-t{ font-size: 11px; color: var(--ink-dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .dlg .ph-msg{ font-size: 12px; margin-top: 5px; min-height: 0; }
+  .dlg .ph-msg.warn{ color: #fbbf24; } .dlg .ph-msg.bad{ color: var(--red); }
+  .gear.armed{ opacity: 1; transform: scale(1.25); color: var(--accent); }
 
   /* portrait TVs: stack the columns */
   @media (orientation: portrait){
@@ -509,6 +536,18 @@
     </div>
 
 
+    <div class="phbox">
+      <div class="f" style="border:none;padding-top:0">
+        <div>📚 Study Hall phases<div class="hint">Silent work and Break in minutes. Low voice gets the rest of the period.</div></div>
+        <button id="phReset">Reset to slides</button>
+      </div>
+      <div id="phTables"></div>
+    </div>
+
+    <div class="f">
+      <div>🔒 Require PIN<div class="hint">Off: the ⚙ button opens Settings without a PIN.</div></div>
+      <div class="seg-btns" id="pinOnBtns"></div>
+    </div>
     <div class="f">
       <div>🔒 Settings PIN<div class="hint" id="pinHint">4 digits</div></div>
       <div class="seg-btns">
@@ -578,8 +617,13 @@
       <div class="hint" style="margin-top:6px">In test mode: <b>←/→</b> ±1 min · <b>Shift+←/→</b> ±10 min · <b>L</b> back to live.</div>
     </div>
 
-    <div class="hint">Keys: <b>S</b> settings · <b>F</b> or double‑click full screen. Settings, PIN and hall pass setup are saved on this device.</div>
-    <button class="close" id="closeBtn">Done</button>
+    <div class="hint">Open Settings: tap <b>⚙</b> twice quickly, or press <b>S</b>. <b>F</b> or double‑click: full screen. <b>Esc</b> = Cancel. Settings, PIN and hall pass setup are saved on this device.</div>
+    <div class="dlgfoot">
+      <span class="dirty" id="dirtyNote"></span>
+      <button id="dlgCancel">Cancel</button>
+      <button id="dlgApply">Apply</button>
+      <button class="save" id="dlgSave">Save</button>
+    </div>
   </div>
 </div>
 
@@ -665,40 +709,28 @@ const BAND_LABELS = { "912": "9th–12th Grade", "1011": "10th–11th Grade" };
 
 
 /* =====================================================================
-   STUDY HALL (Room 244 · Ms. Ebru · Ms. Cabeza) — from the A1/A2/A4/B1/B2/B4
-   schedule slides. Key = "<A|B><period>_<regular|wednesday>".
-   tenten = the two "10/10" windows (no leaving the room).
-   phases = what the class is doing. A gap between phases (e.g. 8:41–8:42)
-   counts as the end of the previous phase.
+   STUDY HALL (Room 244 · Ms. Ebru · Ms. Cabeza) — periods 1, 2 and 4 run
+   silent work → break → low voice; the minutes are set in Settings.
+   Period 3 is one long low-voice period.
    ===================================================================== */
 const SH_INFO = { title: "Study Hall", room: "Room 244", teachers: "Ms. Ebru · Ms. Cabeza" };
 const PH = { silent:  { icon: "🤫", name: "Individual silent work" },
              brk:     { icon: "☕", name: "Break" },
              low:     { icon: "🗣️", name: "Low voice · work in pairs" },
              lownoise:{ icon: "🔉", name: "Independent low-noise work" } };
-function sh(t1, t2, phases){ return { tenten: [t1, t2], phases: phases.map(([k,s,e]) => ({ k, s, e })) }; }
-const P1_REG = sh(["7:50","8:00"], ["9:12","9:22"],  [["silent","7:50","8:31"],["brk","8:31","8:41"],["low","8:42","9:22"]]);
-const P2_REG = sh(["9:27","9:37"], ["10:45","10:55"],[["silent","9:27","10:07"],["brk","10:07","10:17"],["low","10:17","10:55"]]);
-const P4_REG = sh(["13:18","13:28"],["14:40","14:50"],[["silent","13:18","13:58"],["brk","13:59","14:09"],["lownoise","14:10","14:50"]]);
-// slides say 10:11, but the last 10 minutes of a class ending 10:22 start at 10:12
-const P2_WED = sh(["9:10","9:20"], ["10:12","10:22"],[["silent","9:10","9:50"],["brk","9:50","10:00"],["low","10:00","10:22"]]);
-const P4_WED = sh(["12:30","12:40"],["13:35","13:45"],[["silent","12:30","13:10"],["brk","13:10","13:20"],["lownoise","13:20","13:45"]]);
-const STUDY_HALL = {
-  A1_regular: P1_REG, B1_regular: P1_REG,
-  A2_regular: P2_REG, B2_regular: P2_REG,
-  A4_regular: P4_REG, B4_regular: P4_REG,
-  A1_wednesday: sh(["7:50","8:00"], ["8:55","9:05"], [["silent","7:50","8:30"],["brk","8:30","8:40"],["low","8:40","9:05"]]),
-  // B1 (WED) slide shows 8:31 / 8:41 / 8:42 — copied from the regular B1 slide; using the same times as A1 (WED)
-  B1_wednesday: sh(["7:50","8:00"], ["8:55","9:05"], [["silent","7:50","8:30"],["brk","8:30","8:40"],["low","8:40","9:05"]]),
-  A2_wednesday: P2_WED, B2_wednesday: P2_WED,
-  A4_wednesday: P4_WED, B4_wednesday: P4_WED
-};
+// Phase times are no longer fixed here: they come from Settings → Study Hall phases (S.phases).
 
 /* ================= Settings (IndexedDB, with localStorage fallback) ================= */
 const DEFAULT_PIN = "0000";
 const DEFAULTS = {
-  pin: DEFAULT_PIN,
+  pin: DEFAULT_PIN, pinOn: true,
   band: "1011", hour12: true, theme: "dark",
+  // Study Hall phases, in minutes from the start of the period; "Low voice" gets whatever is left.
+  // Defaults reproduce the schedule slides (the 1-minute gaps on the slides belong to the phase before).
+  phases: {
+    regular:   { "1": { silent: 41, brk: 11 }, "2": { silent: 40, brk: 10 }, "4": { silent: 41, brk: 11 } },
+    wednesday: { "1": { silent: 40, brk: 10 }, "2": { silent: 40, brk: 10 }, "4": { silent: 40, brk: 10 } }
+  },
   ruleMin: 10, clubsRule: true,
   offsetSec: 0, localTs: "",
   overrides: {},  // iso -> "regular" | "wednesday" | "noschool"
@@ -752,12 +784,27 @@ async function loadSettings(){
   const today = toISO(now());
   Object.keys(S.overrides).forEach(k => { if(k < today) delete S.overrides[k]; });
 }
+/* While Settings is open, changes are only a preview: what gets stored is the last
+   applied version (committed) plus live data such as passes and the send queue.
+   Apply / Save store the preview; Cancel puts the applied version back. */
+const RUNTIME_KEYS = ["hpActive", "hpQueue", "hpLog", "roster", "rosterAt"];
+let committed = null;
+const clone = o => JSON.parse(JSON.stringify(o));
+function settingsPart(o){ const c = clone(o); RUNTIME_KEYS.forEach(k => delete c[k]); return c; }
+function toStore(){
+  if(!committed) return S;
+  const o = clone(committed);
+  RUNTIME_KEYS.forEach(k => { if(k in S) o[k] = S[k]; });
+  return o;
+}
 async function save(){
-  try{ localStorage.setItem("hallpass_1010", JSON.stringify(S)); }catch(e){}
+  const data = toStore();
+  try{ localStorage.setItem("hallpass_1010", JSON.stringify(data)); }catch(e){}
   try{
     const db = await openIDB();
-    db.transaction("kv","readwrite").objectStore("kv").put(S, "settings");
+    db.transaction("kv","readwrite").objectStore("kv").put(data, "settings");
   }catch(e){}
+  if(committed) dlgDirty();
 }
 
 /* ================= Time ================= */
@@ -844,11 +891,8 @@ function rowsFor(info){
     const m = /Period (\d)/.exec(r.label);
     if(m){
       row.code = `${info.letter || "A"}${m[1]}`;
-      const x = STUDY_HALL[`${row.code}_${info.type}`];
-      if(x) row.sh = {
-        tenten: x.tenten.map(([a,b]) => [toMin24(a), toMin24(b)]),
-        phases: x.phases.map(p => ({ k: p.k, s: toMin24(p.s), e: toMin24(p.e) }))
-      };
+      const cfg = row.type === "class" && S.phases && S.phases[info.type] && S.phases[info.type][m[1]];
+      if(cfg) row.sh = shFromDurations(row, cfg, m[1] === "4" ? "lownoise" : "low");
       // Period 3: same layout as the Study Hall periods, but the whole period is one long "Low voice"
       else if(m[1] === "3" && row.type === "class") row.sh = {
         tenten: [[row.s, row.s + S.ruleMin], [row.e - S.ruleMin, row.e]],
@@ -857,6 +901,18 @@ function rowsFor(info){
     }
     return row;
   });
+}
+// Study Hall: silent → break → low voice, built from the durations in Settings
+function shFromDurations(row, cfg, lowKind){
+  const L = row.e - row.s;
+  const silent = Math.max(0, Math.min(L, Math.round(+cfg.silent || 0)));
+  const brk = Math.max(0, Math.min(L - silent, Math.round(+cfg.brk || 0)));
+  const a = row.s + silent, b = a + brk;
+  const phases = [];
+  if(silent > 0) phases.push({ k: "silent", s: row.s, e: a });
+  if(brk > 0)    phases.push({ k: "brk", s: a, e: b });
+  if(b < row.e)  phases.push({ k: lowKind, s: b, e: row.e });
+  return { tenten: [[row.s, row.s + S.ruleMin], [row.e - S.ruleMin, row.e]], phases };
 }
 // slide times are written 12-hour without AM/PM: anything before 7:00 is afternoon
 function toMin24(hm){ let [h,m] = hm.split(":").map(Number); if(h < 7) h += 12; return h*60 + m; }
@@ -1148,10 +1204,12 @@ function buildDialog(){
   segButtons("ovBtns", [["auto","Auto"],["regular","Block"],["wednesday","Wednesday"],["noschool","No school"]],
     S.overrides[iso] || "auto", v => { if(v === "auto") delete S.overrides[iso]; else S.overrides[iso] = v; });
   segButtons("themeBtns", [["dark","Dark"],["light","Light"]], S.theme, v => { S.theme = v; applyTheme(); });
+  segButtons("pinOnBtns", [[true,"On"],[false,"Off"]], S.pinOn !== false, v => { S.pinOn = v; });
   $("ruleMin").value = S.ruleMin;
   $("offInput").value = (+S.offsetSec).toFixed(1);
   renderSyncText();
   hpBuildSettings();
+  if($("phTables").childElementCount) buildPhases();     // band change moves the period times
 }
 function applyTheme(){ document.body.dataset.theme = S.theme; }
 /* ---- PIN lock ---- */
@@ -1195,16 +1253,49 @@ $("pinSave").onclick = () => {
   if(a !== b){ hint.textContent = "The two PINs don't match"; hint.style.color = "var(--red)"; return; }
   S.pin = a; save();
   $("pinNew").value = ""; $("pinNew2").value = "";
-  hint.textContent = "✓ New PIN saved"; hint.style.color = "var(--green)";
+  hint.textContent = "✓ New PIN set — press Save to keep it"; hint.style.color = "var(--green)";
 };
 
-function openDlg(){ askPin(); }
-function openDlgNow(){ $("pinHint").textContent = "4 digits"; $("pinHint").style.color = ""; buildDialog(); buildPresets(); updateTestUI(); roomFill(); buildDests(); sndBuild(); $("overlay").classList.add("open"); hpBuildSettings(); }
-function closeDlg(){ $("overlay").classList.remove("open"); }
+function openDlg(){ if(S.pinOn === false) openDlgNow(); else askPin(); }
+function openDlgNow(){
+  committed = settingsPart(S);
+  $("pinHint").textContent = "4 digits"; $("pinHint").style.color = "";
+  buildDialog(); buildPresets(); updateTestUI(); roomFill(); buildDests(); sndBuild(); buildPhases();
+  $("overlay").classList.add("open"); hpBuildSettings(); dlgDirty();
+}
+function dlgIsDirty(){ return !!committed && JSON.stringify(settingsPart(S)) !== JSON.stringify(committed); }
+function dlgDirty(){
+  const d = dlgIsDirty();
+  $("dlgApply").disabled = !d; $("dlgSave").disabled = false;
+  $("dirtyNote").textContent = d ? "● Unsaved changes" : "";
+}
+function dlgApply(){ committed = settingsPart(S); save(); dlgDirty(); }
+function dlgSave(){ committed = settingsPart(S); save(); committed = null; $("overlay").classList.remove("open"); }
+function dlgCancel(){
+  if(committed){
+    const back = committed, urlChanged = back.hp.url !== S.hp.url || back.hp.key !== S.hp.key;
+    Object.keys(back).forEach(k => { S[k] = clone(back[k]); });
+    Object.keys(S).forEach(k => { if(!(k in back) && !RUNTIME_KEYS.includes(k)) delete S[k]; });
+    committed = null; save();
+    applyTheme(); lastListKey = ""; hpOutKey = ""; render(); sndNeedsTap();
+    if(urlChanged) hpLoadRoster().then(hpFlush);
+  }
+  $("overlay").classList.remove("open");
+}
+const closeDlg = dlgCancel;      // Esc / S key = Cancel
 
-$("gearBtn").onclick = openDlg;
-$("closeBtn").onclick = closeDlg;
-$("overlay").addEventListener("click", e => { if(e.target.id === "overlay") closeDlg(); });
+/* ⚙ opens on a double tap (two taps within 0.4 s), so a stray touch does nothing */
+let gearTap = 0, gearTimer = null;
+$("gearBtn").onclick = () => {
+  const t = Date.now();
+  if(t - gearTap < 400){ gearTap = 0; clearTimeout(gearTimer); $("gearBtn").classList.remove("armed"); openDlg(); return; }
+  gearTap = t; $("gearBtn").classList.add("armed");
+  clearTimeout(gearTimer); gearTimer = setTimeout(() => { gearTap = 0; $("gearBtn").classList.remove("armed"); }, 400);
+};
+$("gearBtn").title = "Settings: tap twice (or press S)";
+$("dlgCancel").onclick = dlgCancel;
+$("dlgApply").onclick = dlgApply;
+$("dlgSave").onclick = dlgSave;
 $("ruleMin").addEventListener("change", e => {
   const v = Math.round(+e.target.value); if(v >= 1 && v <= 40){ S.ruleMin = v; save(); lastListKey = ""; render(); }
   e.target.value = S.ruleMin;
@@ -1224,7 +1315,7 @@ function toggleFullscreen(){
     else document.exitFullscreen && document.exitFullscreen();
   }catch(e){}
 }
-document.addEventListener("dblclick", e => { if(!e.target.closest(".dlg, .hpov, .slots")) toggleFullscreen(); });
+document.addEventListener("dblclick", e => { if(!e.target.closest(".dlg, .hpov, .slots, .gear, .overlay")) toggleFullscreen(); });
 document.addEventListener("keydown", e => {
   if(e.target.matches("input")) return;
   const k = e.key.toLowerCase();
@@ -1858,11 +1949,113 @@ function sndNeedsTap(){
 }
 document.addEventListener("pointerdown", () => { if(!$("sndWarn").hidden) setTimeout(sndNeedsTap, 50); }, true);
 
+/* ================= Study Hall phases (settings) ================= */
+const PH_DAYS = [["regular", "Block days · Mon, Tue, Thu, Fri"], ["wednesday", "Wednesday"]];
+const PH_PERIODS = ["1", "2", "4"];
+function phNormalize(){
+  const d = DEFAULTS.phases;
+  if(!S.phases || typeof S.phases !== "object") S.phases = clone(d);
+  for(const [t] of PH_DAYS){
+    S.phases[t] = S.phases[t] || {};
+    for(const n of PH_PERIODS){
+      const c = S.phases[t][n] || {};
+      S.phases[t][n] = { silent: Number.isFinite(+c.silent) ? +c.silent : d[t][n].silent,
+                         brk:    Number.isFinite(+c.brk)    ? +c.brk    : d[t][n].brk };
+    }
+  }
+}
+// the period's start/end for this grade band and day type, straight from the bell schedule
+function phPeriod(type, n){
+  const t = window.SCHEDULE_TABLES[S.band] && window.SCHEDULE_TABLES[S.band][type];
+  const r = t && t.rows.find(x => x.label === `Period ${n}`);
+  return r ? { s: toMin(r.start), e: toMin(r.end) } : null;
+}
+const fmtHM = m => `${((Math.floor(m / 60) + 11) % 12) + 1}:${pad2(m % 60)}`;
+
+function buildPhases(){
+  const stepper = (t, n, f, v) => `<div class="stepper">
+      <button data-step="-1" data-t="${t}" data-n="${n}" data-f="${f}" aria-label="less">−</button>
+      <input type="number" inputmode="numeric" min="0" step="1" value="${v}" data-t="${t}" data-n="${n}" data-f="${f}">
+      <button data-step="1" data-t="${t}" data-n="${n}" data-f="${f}" aria-label="more">+</button></div>`;
+  let html = "";
+  for(const [t, label] of PH_DAYS){
+    html += `<div class="phday">${label}</div>`;
+    for(const n of PH_PERIODS){
+      const P = phPeriod(t, n); if(!P) continue;
+      const c = S.phases[t][n], L = P.e - P.s;
+      html += `<div class="phrow" data-row="${t}-${n}">
+        <div class="ph-h">Period ${n} <span>${fmtHM(P.s)}–${fmtHM(P.e)} · ${L} min</span></div>
+        <div class="ph-c">
+          <div class="ph-cell silent"><b>Silent work</b>${stepper(t, n, "silent", c.silent)}<div class="ph-t" data-pt="silent"></div></div>
+          <div class="ph-cell brk"><b>Break</b>${stepper(t, n, "brk", c.brk)}<div class="ph-t" data-pt="brk"></div></div>
+          <div class="ph-cell low"><b>${n === "4" ? "Low noise" : "Low voice"}</b><div class="ph-low"></div><div class="ph-t" data-pt="low"></div></div>
+        </div>
+        <div class="ph-msg"></div>
+      </div>`;
+    }
+  }
+  html += `<div class="hint" style="margin-top:8px">Period 3 is always one long Low voice period.</div>`;
+  $("phTables").innerHTML = html;
+  for(const [t] of PH_DAYS) for(const n of PH_PERIODS) phUpdateRow(t, n);
+}
+function phUpdateRow(t, n, msg, cls){
+  const row = document.querySelector(`[data-row="${t}-${n}"]`); if(!row) return;
+  const P = phPeriod(t, n), c = S.phases[t][n];
+  const L = P.e - P.s, low = L - c.silent - c.brk;
+  const a = P.s + c.silent, b = a + c.brk;
+  row.querySelectorAll("input[data-f]").forEach(i => { if(document.activeElement !== i) i.value = c[i.dataset.f]; });
+  const lowEl = row.querySelector(".ph-low");
+  lowEl.textContent = `${low} min`;
+  lowEl.className = "ph-low" + (low <= 0 ? " bad" : low < 5 ? " warn" : "");
+  row.querySelector('[data-pt="silent"]').textContent = c.silent ? `${fmtHM(P.s)}–${fmtHM(a)}` : "none";
+  row.querySelector('[data-pt="brk"]').textContent = c.brk ? `${fmtHM(a)}–${fmtHM(b)}` : "none";
+  row.querySelector('[data-pt="low"]').textContent = low > 0 ? `${fmtHM(b)}–${fmtHM(P.e)}` : "none";
+  if(!msg){
+    if(low <= 0){ msg = "No time left for Low voice: the period ends right after the break."; cls = "bad"; }
+    else if(low < 5){ msg = `Only ${low} min of Low voice left.`; cls = "warn"; }
+  }
+  const m = row.querySelector(".ph-msg"); m.textContent = msg || ""; m.className = "ph-msg" + (cls ? " " + cls : "");
+}
+// set one value, keeping Silent + Break inside the period (the nearest possible value is used)
+function phSet(t, n, f, raw){
+  const P = phPeriod(t, n); if(!P) return;
+  const c = S.phases[t][n], L = P.e - P.s;
+  const other = f === "silent" ? c.brk : c.silent;
+  const max = L - other;
+  let v = Math.round(+raw), msg = "", cls = "";
+  if(!Number.isFinite(v)) v = c[f];
+  if(v < 0){ v = 0; }
+  if(v > max){
+    v = max; cls = "bad";
+    msg = `Silent work + Break can't be longer than the ${L}-min period, so ${f === "silent" ? "Silent work" : "Break"} was set to ${max} min.`;
+  }
+  c[f] = v;
+  save(); lastListKey = ""; render();
+  phUpdateRow(t, n, msg, cls);
+}
+$("phTables").addEventListener("change", e => {
+  const i = e.target.closest("input[data-f]"); if(!i) return;
+  phSet(i.dataset.t, i.dataset.n, i.dataset.f, i.value);
+  i.value = S.phases[i.dataset.t][i.dataset.n][i.dataset.f];
+});
+// − / + buttons: tap = 1 minute, hold = keeps counting
+let phHold = null;
+function phStep(b){ const c = S.phases[b.dataset.t][b.dataset.n]; phSet(b.dataset.t, b.dataset.n, b.dataset.f, c[b.dataset.f] + (+b.dataset.step)); }
+function phStop(){ if(phHold){ clearTimeout(phHold.t); clearInterval(phHold.i); phHold = null; } }
+$("phTables").addEventListener("pointerdown", e => {
+  const b = e.target.closest("[data-step]"); if(!b) return;
+  e.preventDefault(); phStop(); phStep(b);
+  phHold = { t: setTimeout(() => { phHold.i = setInterval(() => phStep(b), 90); }, 450), i: null };
+});
+["pointerup", "pointerleave", "pointercancel"].forEach(ev => $("phTables").addEventListener(ev, phStop));
+$("phReset").onclick = () => { S.phases = clone(DEFAULTS.phases); save(); lastListKey = ""; render(); buildPhases(); };
+
 /* ================= Start ================= */
 (async function start(){
   await loadSettings();
   hpNormalize();
   destNormalize();
+  phNormalize();
   sndLoadLib().then(sndNeedsTap);
   applyTheme();
   try{
